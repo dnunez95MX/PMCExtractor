@@ -1,0 +1,31 @@
+{
+  "type": "module",
+  "name": "pmcextractor",
+  "version": "1.0.0",
+  "description": "Publications Extractor",
+  "main": "bin/index.js",
+  "scripts": {
+    "start": "node bin/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dnunez95MX/PMCExtractor.git"
+  },
+  "bin": {
+    "hello": "./bin/index.js"
+  },
+  "author": "Daniel Nunez",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dnunez95MX/PMCExtractor/issues"
+  },
+  "homepage": "https://github.com/dnunez95MX/PMCExtractor#readme",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.4.1",
+    "readline": "^1.3.0",
+    "readline-sync": "^1.4.10"
+  }
+}

@@ -16,7 +16,8 @@ const getSearchTerms = async () => {
   const country = await readlineSync.question("Enter a country (z.B. Japan): ");
 
   const year = await readlineSync.questionInt(
-    "Enter a year of publication (optional, z.B. 2020): "
+    "Enter a year of publication (optional, z.B. 2020): ",
+    { defaultInput: null }
   );
 
   const maxRecords = await readlineSync.questionInt(

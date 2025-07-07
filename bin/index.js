@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { getApiKey } from "./authorization.js";
-import { retrieveRecords } from "./searchRecords.js";
+import { retrieveRecords } from "./retrieveRecords.js";
+import { exportRecordData } from "./handleExportRecordData.js";
 import getSearchTerms from "./queryBuilder.js";
 import chalk from "chalk";
 import boxen from "boxen";
@@ -25,7 +26,9 @@ const key = await getApiKey();
 console.log(key);
 const search_terms = await getSearchTerms();
 console.log(search_terms);
-await retrieveRecords(key, search_terms);
+const records = await retrieveRecords(key, search_terms);
+await exportRecordData(records);
+
 // if (key === "puto") {
 //   axios.get(url, { headers: { Accept: "application/json" } }).then((res) => {
 //     console.log(res.data.joke);

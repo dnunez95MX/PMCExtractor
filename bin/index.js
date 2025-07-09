@@ -27,7 +27,7 @@ console.log(key);
 const search_terms = await getSearchTerms();
 console.log(search_terms);
 const records = await retrieveRecords(key, search_terms);
-await exportRecordData(records);
+await exportRecordData(records, search_terms);
 
 // if (key === "puto") {
 //   axios.get(url, { headers: { Accept: "application/json" } }).then((res) => {

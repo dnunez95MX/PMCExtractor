@@ -2,22 +2,6 @@ import axios from "axios";
 import xml2js from "xml2js";
 
 export const retrieveRecords = async (api_key, search_terms) => {
-  // const url =
-  //   "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pmc&api_key=e932b4ee109be3a91c2e12e3da9599bb3408&id=25125";
-
-  // const fetchUrl =
-  //   "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id=9063264&api_key=e932b4ee109be3a91c2e12e3da9599bb3408";
-
-  // const fetchUrl =
-  //   "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id=6881327&api_key=e932b4ee109be3a91c2e12e3da9599bb3408";
-
-  //   const fetchUrl =
-  //     "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id=11276855&api_key=e932b4ee109be3a91c2e12e3da9599bb3408";
-
-  //   const fetchUrl =
-  //     "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id=10647544&api_key=e932b4ee109be3a91c2e12e3da9599bb3408";
-  //   console.log(query);
-
   const fetchUrl = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi";
 
   const searchUrl =
@@ -25,14 +9,13 @@ export const retrieveRecords = async (api_key, search_terms) => {
 
   let articleIds = [];
   let records = [];
-  let corresp_emails = [];
 
   // axios.interceptors.request.use((request) => {
   //   console.log("Starting Request", JSON.stringify(request, null, 2));
   //   return request;
   // });
 
-  // 2. Parse XML to JSON
+  // Parse XML to JSON
   const parser = new xml2js.Parser({
     explicitArray: false, // Don't always create arrays for single elements
     mergeAttrs: true, // Merge attributes with child elements
@@ -41,27 +24,165 @@ export const retrieveRecords = async (api_key, search_terms) => {
 
   const params = await buildParamsQuery();
 
-  await axios
-    .get(searchUrl, {
+  try {
+    const response = await axios.get(searchUrl, {
       headers: {
         Accept: "application/xml", // Ensure you get XML response
       },
       params: params,
-    })
-    .then(async (response) => {
-      let result = await parser.parseStringPromise(response.data);
-      let idList = result.eSearchResult.IdList.Id;
+    });
+    let result = await parser.parseStringPromise(response.data);
+    let idList = result.eSearchResult.IdList.Id;
 
-      if (Array.isArray(idList)) {
-        idList.map((i) => {
-          articleIds.push(i);
+    if (Array.isArray(idList)) {
+      idList.map((i) => {
+        articleIds.push(i);
+      });
+    } else {
+      articleIds.push(idList);
+    }
+
+    for (const art of articleIds) {
+      await new Promise(async (resolve) => {
+        const res = await getRecordsData(art);
+        if (res) {
+          records.push(res);
+        }
+        resolve();
+      });
+    }
+
+    return records;
+  } catch (error) {
+    if (error.response) {
+      // Error de respuesta HTTP (4xx, 5xx)
+      console.error("Error del servidor:", error.response.status);
+      console.error("Datos del error:", error.response.data);
+    } else if (error.request) {
+      // No se recibió respuesta
+      console.error("No se recibió respuesta:", error.request);
+    } else {
+      // Error en la configuración
+      console.error("Error al configurar la solicitud:", error.message);
+    }
+  }
+
+  async function getRecordsData(art) {
+    let corr_author;
+    let affiliations;
+
+    try {
+      const response = await axios.get(fetchUrl, {
+        headers: {
+          Accept: "application/xml",
+        },
+        params: {
+          db: "pmc",
+          id: art,
+          api_key: api_key,
+        },
+      });
+
+      let result = await parser.parseStringPromise(response.data);
+
+      let title =
+        result["pmc-articleset"].article.front["article-meta"]["title-group"][
+          "article-title"
+        ];
+
+      let link = `https://pmc.ncbi.nlm.nih.gov/articles/PMC${art}/`;
+
+      let contrib_group =
+        result["pmc-articleset"].article.front["article-meta"]["contrib-group"];
+
+      //CHECK CORRESPONDENCE TO
+      let author_notes =
+        result["pmc-articleset"].article.front["article-meta"]["author-notes"];
+
+      let pubDateObject =
+        result["pmc-articleset"].article.front["article-meta"]["pub-date"];
+
+      let pubDate = Array.isArray(pubDateObject)
+        ? pubDateObject[0].year
+        : pubDateObject.year;
+
+      affiliations =
+        contrib_group["aff"] ??
+        result["pmc-articleset"].article.front["article-meta"]["aff"];
+
+      let authors = [];
+
+      if (Array.isArray(contrib_group)) {
+        contrib_group.map((con) => {
+          if (Array.isArray(con.contrib)) {
+            con.contrib.map((x) => {
+              if (x["contrib-type"] == "author") {
+                authors.push(x);
+              }
+              if (x["aff"]) {
+                affiliations = x["aff"];
+              }
+            });
+          } else {
+            if (con.contrib["contrib-type"] == "author") {
+              authors.push(con.contrib);
+            }
+
+            if (con.contrib["aff"]) {
+              affiliations = con.contrib["aff"];
+            }
+          }
         });
       } else {
-        articleIds.push(idList);
+        if (Array.isArray(contrib_group.contrib)) {
+          contrib_group.contrib.map((x) => {
+            if (x["contrib-type"] == "author") {
+              authors.push(x);
+
+              if (x["aff"]) {
+                affiliations = x["aff"];
+              }
+            }
+          });
+        } else {
+          if (contrib_group.contrib["contrib-type"] == "author") {
+            authors.push(contrib_group.contrib);
+          }
+        }
       }
-      await getRecordsData();
-    })
-    .catch((error) => {
+
+      let first_author = authors[0];
+      let last_author = authors[authors.length - 1];
+
+      corr_author = authors.find((a) => {
+        let ref = a.xref;
+        //revisar excepcion donde existe un email pero no esta relacionado con ninguna autor
+        if (ref) {
+          if (Array.isArray(ref)) {
+            return ref.find((x) => x["ref-type"] === "corresp");
+          } else {
+            let authRef = ref["ref-type"] === "corresp";
+            if (authRef) {
+              return authRef;
+            }
+          }
+        }
+      });
+
+      const record = await handleAuthorData(
+        affiliations,
+        first_author,
+        last_author,
+        corr_author,
+        title,
+        link,
+        pubDate
+      );
+
+      return record;
+    } catch (error) {
+      // 5. Manejar diferentes tipos de errores
+      console.log(`ERROR: ${art}`);
       if (error.response) {
         // Error de respuesta HTTP (4xx, 5xx)
         console.error("Error del servidor:", error.response.status);
@@ -73,132 +194,144 @@ export const retrieveRecords = async (api_key, search_terms) => {
         // Error en la configuración
         console.error("Error al configurar la solicitud:", error.message);
       }
-    });
 
-  async function getRecordsData() {
-    let corr_author;
+      return null;
+    }
+  }
 
-    const promises = articleIds.map(async (art) => {
-      console.log(art);
-      try {
-        const response = await axios.get(fetchUrl, {
-          headers: {
-            Accept: "application/xml",
-          },
-          params: {
-            db: "pmc",
-            id: art,
-            api_key: api_key,
-          },
-        });
+  async function handleAuthorData(
+    affiliations,
+    fa,
+    la,
+    ca,
+    title,
+    link,
+    pubDate
+  ) {
+    const getAffiliationsAuthor = (ref) => {
+      let affiliationsAuthor = [];
 
-        let result = await parser.parseStringPromise(response.data);
+      if (affiliations) {
+        if (Array.isArray(affiliations)) {
+          if (!affiliations.some((af) => af.hasOwnProperty("id"))) {
+            let institution = affiliations[0]?.institution ?? "";
+            return institution;
+          }
+        } else if (!affiliations.hasOwnProperty("id")) {
+          let institution = affiliations.institution ?? "";
+          return institution;
+        }
 
-        let title =
-          result["pmc-articleset"].article.front["article-meta"]["title-group"][
-            "article-title"
-          ];
-
-        let link = `https://pmc.ncbi.nlm.nih.gov/articles/PMC${art}/`;
-
-        let contrib_group =
-          result["pmc-articleset"].article.front["article-meta"][
-            "contrib-group"
-          ];
-
-        let author_notes =
-          result["pmc-articleset"].article.front["article-meta"][
-            "author-notes"
-          ];
-
-        let affiliations = contrib_group["aff"];
-
-        let authors = [];
-
-        if (Array.isArray(contrib_group)) {
-          console.log(contrib_group);
-          contrib_group.map((con) => {
-            if (Array.isArray(con.contrib)) {
-              con.contrib.map((x) => {
-                if (x["contrib-type"] == "author") {
-                  authors.push(x);
-                }
-              });
-            } else {
-              if (con.contrib["contrib-type"] == "author") {
-                authors.push(con.contrib);
+        if (ref) {
+          if (Array.isArray(ref)) {
+            ref.map((r) => {
+              let aff;
+              if (Array.isArray(affiliations)) {
+                aff = affiliations.find(
+                  (af) => af.id.toLowerCase() == r.rid.toLowerCase()
+                );
+              } else {
+                aff =
+                  affiliations.id.toLowerCase() == r.rid.toLowerCase()
+                    ? affiliations
+                    : "";
               }
-            }
-          });
-        } else {
-          if (Array.isArray(contrib_group.contrib)) {
-            contrib_group.contrib.map((x) => {
-              if (x["contrib-type"] == "author") {
-                authors.push(x);
+
+              if (aff) {
+                affiliationsAuthor.push(aff);
               }
             });
           } else {
-            if (contrib_group.contrib["contrib-type"] == "author") {
-              authors.push(contrib_group.contrib);
-            }
-          }
-        }
-
-        let first_author = authors[0];
-        let last_author = authors[authors.length - 1];
-
-        const corrEmails = author_notes?.corresp?.email ?? [];
-
-        const getCorrEmails = (emails) =>
-          Array.isArray(emails) ? emails[0] : emails;
-
-        corresp_emails = getCorrEmails(corrEmails);
-
-        corr_author = authors.filter((a) => {
-          let ref = a.xref;
-          //revisar excepcion donde existe un email pero no esta relacionado con ninguna autor
-          if (ref) {
-            if (Array.isArray(ref)) {
-              return ref.find((x) => x["ref-type"] === "corresp");
+            let aff;
+            if (Array.isArray(affiliations)) {
+              aff = affiliations.find(
+                (af) => af.id.toLowerCase() == ref.rid.toLowerCase()
+              );
             } else {
-              let authRef = ref["ref-type"] === "corresp";
-              if (authRef) {
-                return authRef;
-              }
+              aff =
+                affiliations.id.toLowerCase() == ref.rid.toLowerCase()
+                  ? affiliations
+                  : "";
+            }
+
+            if (aff) {
+              affiliationsAuthor.push(aff);
             }
           }
-        });
-
-        const record = await handleAuthorData(
-          affiliations,
-          first_author,
-          last_author,
-          corr_author,
-          corresp_emails,
-          title,
-          link
-        );
-
-        records.push(record);
-      } catch (error) {
-        // 5. Manejar diferentes tipos de errores
-        if (error.response) {
-          // Error de respuesta HTTP (4xx, 5xx)
-          console.error("Error del servidor:", error.response.status);
-          console.error("Datos del error:", error.response.data);
-        } else if (error.request) {
-          // No se recibió respuesta
-          console.error("No se recibió respuesta:", error.request);
-        } else {
-          // Error en la configuración
-          console.error("Error al configurar la solicitud:", error.message);
         }
 
-        return null;
-      }
-    });
+        let mayorAff;
 
-    await Promise.all(promises);
+        if (affiliationsAuthor.length > 0) {
+          mayorAff =
+            affiliationsAuthor[0]["institution-wrap"]?.institution ??
+            Object.values(affiliationsAuthor[0])[0];
+        } else {
+          mayorAff = "";
+        }
+
+        return Array.isArray(mayorAff) ? mayorAff.join("") : mayorAff;
+      }
+
+      return "";
+    };
+
+    const getConstructedName = (name) => {
+      let constructedName = `${name.surname}, ${
+        Object.values(name["given-names"])[0]
+      }`;
+      return constructedName;
+    };
+
+    const getConstructedEmail = (author) => {
+      let constructedEmail = author.address?.email ?? author.email;
+      return constructedEmail;
+    };
+
+    const getConstructedTitle = (title) => {
+      let constructedTitle;
+      if (typeof title === "object") {
+        constructedTitle = Object.values(title)[0];
+      } else if (typeof title === "string") {
+        constructedTitle = title;
+      }
+
+      return constructedTitle;
+    };
+
+    const faRef = fa.xref;
+    let firstAuthor = {
+      name: getConstructedName(fa.name),
+      email: getConstructedEmail(fa) ?? null,
+      affiliations: getAffiliationsAuthor(faRef),
+    };
+
+    const laRef = la.xref;
+    let lastAuthor = {
+      name: getConstructedName(la.name),
+      email: getConstructedEmail(la) ?? null,
+      affiliations: getAffiliationsAuthor(laRef),
+    };
+
+    let correspondingAuthor;
+    if (ca) {
+      const caRef = ca.xref;
+      correspondingAuthor = {
+        name: getConstructedName(ca.name),
+        email: getConstructedEmail(ca) ?? null,
+        affiliations: getAffiliationsAuthor(caRef),
+      };
+    }
+
+    let recordData = {
+      title: getConstructedTitle(title),
+      firstAuthor,
+      lastAuthor,
+      correspondingAuthor: correspondingAuthor ?? null,
+      link,
+      pubDate,
+    };
+    return recordData;
   }
 
   async function buildParamsQuery() {
@@ -216,73 +349,4 @@ export const retrieveRecords = async (api_key, search_terms) => {
 
     return params;
   }
-
-  async function handleAuthorData(
-    affiliations,
-    fa,
-    la,
-    ca,
-    corEmails,
-    title,
-    link
-  ) {
-    //console.log(fa);
-    //console.log(la);
-    // console.log(ca);
-    // console.log(corEmails);
-
-    const getAffiliationsAuthor = (ref) => {
-      let affiliationsAuthor = [];
-      if (ref) {
-        if (Array.isArray(ref)) {
-          ref.map((r) => {
-            let aff = affiliations.find(
-              (af) => af.id.toLowerCase() == r.rid.toLowerCase()
-            );
-            if (aff) {
-              affiliationsAuthor.push(aff);
-            }
-          });
-        } else {
-          console.log("solo una referencia", ref);
-        }
-      }
-
-      //   Object.values(affiliationsAuthor[0]["given-names"])[0] ??
-      //  affiliationsAuthor[0]["institution-wrap"]
-      return affiliationsAuthor[0];
-    };
-
-    const getConstructedName = (name) => {
-      let constructedName = `${name.surname}, ${
-        Object.values(name["given-names"])[0]
-      }`;
-      return constructedName;
-    };
-
-    const faRef = fa.xref;
-    let firstAuthor = {
-      name: getConstructedName(fa.name),
-      email: fa.email,
-      affiliations: getAffiliationsAuthor(faRef),
-    };
-
-    const laRef = la.xref;
-    console.log(la);
-    let lastAuthor = {
-      name: getConstructedName(la.name),
-      email: la.email ?? la.address.email,
-      affiliations: getAffiliationsAuthor(laRef),
-    };
-
-    let recordData = {
-      title,
-      firstAuthor,
-      lastAuthor,
-      link,
-    };
-    return recordData;
-  }
-
-  return records;
 };

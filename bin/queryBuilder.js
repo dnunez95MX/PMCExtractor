@@ -9,30 +9,51 @@ const getSearchTerms = async () => {
   //     "Geben Sie das Jahr der Publikation ein (optional, z.B. 2020): "
   //   ).strip();
 
+  let specificYear;
+  let startYear;
+  let endYear;
+
   const keyword = await readlineSync.question(
     "Enter a search term (z.B. Organoid): "
   );
 
   const country = await readlineSync.question("Enter a country (z.B. Japan): ");
 
-  const year = await readlineSync.questionInt(
-    "Enter a year of publication (optional, z.B. 2020): ",
-    { defaultInput: null }
-  );
+  let options = ["Retrieve All", "Get Specific Year", "Search by Year Range"];
 
-  const maxRecords = await readlineSync.questionInt(
-    "Enter the maximum number of records to retrieve per search (RETMAX): ",
-    {
-      limit: 20,
-      limitMessage: "Input valid number",
-    }
-  );
+  let index = readlineSync.keyInSelect(options, "Publication Date?");
+  console.log("Ok, " + options[index]);
+
+  if (index == 1) {
+    specificYear = await readlineSync.questionInt(
+      "Enter year of publication (z.B. 2020): ",
+      { defaultInput: null }
+    );
+  } else if (index == 2) {
+    startYear = await readlineSync.questionInt(
+      "Enter start year range of publication (z.B. 2020): ",
+      { defaultInput: null }
+    );
+    endYear = await readlineSync.questionInt(
+      "Enter end year range of publication (optional, z.B. 2025): ",
+      { defaultInput: null }
+    );
+  } else if (index == 0) {
+  } else {
+    console.log("Aborted");
+    return;
+  }
+
+  // const maxRecords = await readlineSync.getRawInput(
+  //   "Enter the maximum number of records to retrieve per search (RETMAX): "
+  // );
 
   return {
     keyword,
     country,
-    year,
-    maxRecords,
+    specificYear,
+    startYear,
+    endYear,
   };
 };
 

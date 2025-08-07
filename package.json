@@ -13,7 +13,7 @@
     "url": "git+https://github.com/dnunez95MX/PMCExtractor.git"
   },
   "bin": {
-    "hello": "./bin/index.js"
+    "PMC": "./bin/index.js"
   },
   "author": "Daniel Nunez",
   "license": "ISC",

@@ -1,6 +1,10 @@
 import { utils, writeFile } from "xlsx";
 
-export const exportRecordData = (records, { keyword, country }) => {
+export const exportRecordData = (
+  records,
+  unreachableArticles,
+  { keyword, country }
+) => {
   // records.forEach((x) => {
   //   console.log(x);
   // });
@@ -23,9 +27,29 @@ export const exportRecordData = (records, { keyword, country }) => {
     };
   });
 
-  console.log(records.length);
+  const unhandledArticles = unreachableArticles?.map((art) => {
+    let link = `https://pmc.ncbi.nlm.nih.gov/articles/PMC${art}/`;
 
-  function exportToExcel(data, fileName = "datos.xlsx") {
+    return {
+      Link: link,
+    };
+  });
+
+  function handleUnreachedPublications(unreachableArticles) {
+    // const worksheetUnhandledPub = utils.json_to_sheet(unreachableArticles, {
+    //   skipHeader: true,
+    // });
+    const worksheet = utils.json_to_sheet(unreachableArticles, {
+      skipHeader: true,
+    });
+
+    worksheet["!freeze"] = { xSplit: 0, ySplit: 1, topLeftCell: "A2" };
+    const workbook = utils.book_new();
+    utils.book_append_sheet(workbook, worksheet, `PMC_${keyword}_${country}`);
+    writeFile(workbook, "unfetched_articles.xlsx");
+  }
+
+  function exportToExcel(data, fileName = "data.xlsx") {
     const worksheet = utils.json_to_sheet(data, { skipHeader: true });
 
     const headers = Object.keys(data[0]);
@@ -83,4 +107,9 @@ export const exportRecordData = (records, { keyword, country }) => {
   }
 
   exportToExcel(cleanedRecords, "publications.xlsx");
+  if (unhandledArticles.length > 0) {
+    handleUnreachedPublications(unhandledArticles);
+  }
+
+  console.log(`Done!, total articles fetched: ${records.length}`);
 };

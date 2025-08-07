@@ -9,6 +9,7 @@ export const retrieveRecords = async (api_key, search_terms) => {
 
   let articleIds = [];
   let records = [];
+  let unreachableArticles = [];
 
   // axios.interceptors.request.use((request) => {
   //   console.log("Starting Request", JSON.stringify(request, null, 2));
@@ -22,27 +23,69 @@ export const retrieveRecords = async (api_key, search_terms) => {
     ignoreAttrs: false, // Don't ignore XML attributes
   });
 
-  const params = await buildParamsQuery();
-
   try {
-    const response = await axios.get(searchUrl, {
-      headers: {
-        Accept: "application/xml", // Ensure you get XML response
-      },
-      params: params,
-    });
-    let result = await parser.parseStringPromise(response.data);
-    let idList = result.eSearchResult.IdList.Id;
+    let response;
+    let fetchedArticleIds;
 
-    if (Array.isArray(idList)) {
-      idList.map((i) => {
+    if (search_terms.specificYear) {
+      response = await axios.get(searchUrl, {
+        headers: {
+          Accept: "application/xml", // Ensure you get XML response
+        },
+        params: await buildParamsQuery(search_terms.specificYear),
+      });
+
+      let result = await parser.parseStringPromise(response.data);
+      let idList = result.eSearchResult.IdList.Id;
+
+      fetchedArticleIds = idList;
+    } else if (search_terms.startYear < search_terms.endYear) {
+      console.log(
+        `Searching through range: ${search_terms.startYear} - ${search_terms.endYear}`
+      );
+
+      let articleRange = [];
+
+      for (let i = search_terms.startYear; i < search_terms.endYear + 1; i++) {
+        response = await axios.get(searchUrl, {
+          headers: {
+            Accept: "application/xml", // Ensure you get XML response
+          },
+          params: await buildParamsQuery(i),
+        });
+
+        let result = await parser.parseStringPromise(response.data);
+        let idList = result.eSearchResult.IdList.Id;
+
+        articleRange = articleRange.concat(idList);
+      }
+
+      fetchedArticleIds = articleRange;
+    } else {
+      response = await axios.get(searchUrl, {
+        headers: {
+          Accept: "application/xml", // Ensure you get XML response
+        },
+        params: await buildParamsQuery(),
+      });
+
+      let result = await parser.parseStringPromise(response.data);
+      let idList = result.eSearchResult.IdList.Id;
+
+      fetchedArticleIds = idList;
+    }
+
+    if (Array.isArray(fetchedArticleIds)) {
+      fetchedArticleIds.map((i) => {
         articleIds.push(i);
       });
     } else {
       articleIds.push(idList);
     }
 
-    for (const art of articleIds) {
+    console.log(`Total items found: ${fetchedArticleIds.length}`);
+
+    for (const art of fetchedArticleIds) {
       await new Promise(async (resolve) => {
         const res = await getRecordsData(art);
         if (res) {
@@ -52,12 +95,22 @@ export const retrieveRecords = async (api_key, search_terms) => {
       });
     }
 
-    return records;
+    if (unreachableArticles.length > 0) {
+      console.log("The following articles where not fetched: ");
+      unreachableArticles?.map((x) => console.log(`Articicle ID: ${x}`));
+    }
+
+    let results = {
+      records,
+      unreachableArticles,
+    };
+
+    return results;
   } catch (error) {
     if (error.response) {
       // Error de respuesta HTTP (4xx, 5xx)
-      console.error("Error del servidor:", error.response.status);
-      console.error("Datos del error:", error.response.data);
+      console.error("Server error:", error.response.status);
+      console.error("Detailed error:", error.response.data);
     } else if (error.request) {
       // No se recibió respuesta
       console.error("No se recibió respuesta:", error.request);
@@ -183,6 +236,7 @@ export const retrieveRecords = async (api_key, search_terms) => {
     } catch (error) {
       // 5. Manejar diferentes tipos de errores
       console.log(`ERROR: ${art}`);
+      unreachableArticles.push(art);
       if (error.response) {
         // Error de respuesta HTTP (4xx, 5xx)
         console.error("Error del servidor:", error.response.status);
@@ -334,16 +388,16 @@ export const retrieveRecords = async (api_key, search_terms) => {
     return recordData;
   }
 
-  async function buildParamsQuery() {
+  async function buildParamsQuery(publicationYear) {
     let query = `(${search_terms.keyword}[Body All] AND ${search_terms.country}[Affiliation]`;
-    if (search_terms.year > 0) {
-      query += `AND ${search_terms.year}[DP]`;
+    if (publicationYear) {
+      query += ` AND ${publicationYear}[DP]`;
     }
 
     let params = {
       db: "pmc",
       term: query,
-      retmax: search_terms.maxRecords,
+      retmax: 100000,
       api_key: api_key,
     };
 
